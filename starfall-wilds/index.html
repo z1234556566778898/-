@@ -1,0 +1,2349 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>星坠荒野（单文件离线原型）</title>
+  <style>
+    html, body { height: 100%; margin: 0; background: #070A0F; overflow: hidden; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "PingFang SC", "Microsoft YaHei", Arial; }
+    #root { position: fixed; inset: 0; }
+    canvas { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; }
+    #hud { position: absolute; inset: 0; pointer-events: none; color: rgba(235, 245, 255, 0.95); }
+    .panel { pointer-events: auto; background: rgba(10, 14, 22, 0.72); border: 1px solid rgba(120, 170, 255, 0.18); border-radius: 12px; backdrop-filter: blur(6px); }
+    #topLeft { position: absolute; top: 14px; left: 14px; padding: 12px 12px; min-width: 260px; }
+    #topRight { position: absolute; top: 14px; right: 14px; padding: 12px 12px; width: 320px; display: none; }
+    #bottomLeft { position: absolute; left: 14px; bottom: 14px; padding: 10px 12px; max-width: 520px; }
+    #toast { position: absolute; top: 14px; left: 50%; transform: translateX(-50%); padding: 10px 12px; border-radius: 999px; display: none; }
+    .row { display: flex; gap: 10px; align-items: center; }
+    .muted { color: rgba(235, 245, 255, 0.68); }
+    .hr { height: 1px; background: rgba(120, 170, 255, 0.14); margin: 10px 0; }
+    .pill { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; background: rgba(120, 170, 255, 0.10); border: 1px solid rgba(120, 170, 255, 0.14); }
+    .btn { pointer-events: auto; cursor: pointer; user-select: none; display: inline-flex; align-items: center; justify-content: center; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(120, 170, 255, 0.22); background: rgba(120, 170, 255, 0.10); color: rgba(235, 245, 255, 0.92); font-weight: 600; }
+    .btn:active { transform: translateY(1px); }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+    .item { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 10px 10px; border-radius: 10px; border: 1px solid rgba(120, 170, 255, 0.14); background: rgba(10, 14, 22, 0.45); }
+    .item strong { font-size: 14px; }
+    .k { font-variant-numeric: tabular-nums; }
+    #overlay { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: radial-gradient(1200px 800px at 50% 45%, rgba(65, 140, 255, 0.18), rgba(0,0,0,0.92)); }
+    #menu { width: min(720px, calc(100% - 28px)); padding: 18px; }
+    #menu h1 { margin: 0 0 6px; font-size: 22px; }
+    #menu p { margin: 0 0 14px; color: rgba(235, 245, 255, 0.72); line-height: 1.5; }
+    #menu .row { justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+    #menu .btn { padding: 10px 12px; }
+    #menu .small { font-size: 12px; color: rgba(235, 245, 255, 0.62); }
+    #cross { position: absolute; left: 50%; top: 50%; width: 18px; height: 18px; transform: translate(-50%, -50%); pointer-events: none; opacity: 0.35; }
+    #cross::before, #cross::after { content: ""; position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); background: rgba(235,245,255,0.75); }
+    #cross::before { width: 18px; height: 2px; border-radius: 2px; }
+    #cross::after { width: 2px; height: 18px; border-radius: 2px; }
+  </style>
+</head>
+<body>
+  <div id="root">
+    <canvas id="c"></canvas>
+    <div id="cross"></div>
+    <div id="hud">
+      <div id="topLeft" class="panel"></div>
+      <div id="topRight" class="panel"></div>
+      <div id="bottomLeft" class="panel"></div>
+      <div id="toast" class="panel"></div>
+    </div>
+    <div id="overlay">
+      <div id="menu" class="panel">
+        <h1>星坠荒野（单文件离线原型）</h1>
+        <p>目标：采集资源、建造工作台与炮台，守住坠星营地。这个原型只实现了探索/战斗/采集/建造的最小闭环。</p>
+        <div class="row">
+          <div class="pill">
+            <span class="muted">移动</span><span class="k">WASD/方向键</span>
+          </div>
+          <div class="pill">
+            <span class="muted">攻击</span><span class="k">鼠标左键</span>
+          </div>
+          <div class="pill">
+            <span class="muted">翻滚</span><span class="k">Shift</span>
+          </div>
+          <div class="pill">
+            <span class="muted">建造</span><span class="k">B</span>
+          </div>
+        </div>
+        <div class="hr"></div>
+        <div class="row">
+          <div class="small">提示：I 背包 · E 制作 · B 放置模式 · O 选项 · F5 存档 · F9 读档。</div>
+          <div class="row">
+            <div id="btnContinue" class="btn">继续</div>
+            <div id="btnNew" class="btn">新游戏</div>
+            <div id="btnDeleteSave" class="btn">清除存档</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("c");
+    const ctx = canvas.getContext("2d");
+    const uiTopLeft = document.getElementById("topLeft");
+    const uiTopRight = document.getElementById("topRight");
+    const uiBottomLeft = document.getElementById("bottomLeft");
+    const uiToast = document.getElementById("toast");
+    const overlay = document.getElementById("overlay");
+    const btnContinue = document.getElementById("btnContinue");
+    const btnNew = document.getElementById("btnNew");
+    const btnDeleteSave = document.getElementById("btnDeleteSave");
+
+    if (!ctx.roundRect) {
+      ctx.roundRect = function(x, y, w, h, r) {
+        const rr = typeof r === "number" ? { tl: r, tr: r, br: r, bl: r } : (r || { tl: 0, tr: 0, br: 0, bl: 0 });
+        const tl = rr.tl || 0, tr = rr.tr || 0, br = rr.br || 0, bl = rr.bl || 0;
+        this.moveTo(x + tl, y);
+        this.lineTo(x + w - tr, y);
+        this.quadraticCurveTo(x + w, y, x + w, y + tr);
+        this.lineTo(x + w, y + h - br);
+        this.quadraticCurveTo(x + w, y + h, x + w - br, y + h);
+        this.lineTo(x + bl, y + h);
+        this.quadraticCurveTo(x, y + h, x, y + h - bl);
+        this.lineTo(x, y + tl);
+        this.quadraticCurveTo(x, y, x + tl, y);
+        return this;
+      };
+    }
+
+    const p3dCanvas = document.createElement("canvas");
+    p3dCanvas.width = 160;
+    p3dCanvas.height = 160;
+    p3dCanvas.style.display = "none";
+    document.body.appendChild(p3dCanvas);
+
+    function v3(x = 0, y = 0, z = 0) { return new Float32Array([x, y, z]); }
+    function m4() { const o = new Float32Array(16); o[0] = o[5] = o[10] = o[15] = 1; return o; }
+    function m4copy(a) { const o = new Float32Array(16); o.set(a); return o; }
+    function m4mul(a, b) {
+      const o = new Float32Array(16);
+      const a00 = a[0], a01 = a[1], a02 = a[2], a03 = a[3];
+      const a10 = a[4], a11 = a[5], a12 = a[6], a13 = a[7];
+      const a20 = a[8], a21 = a[9], a22 = a[10], a23 = a[11];
+      const a30 = a[12], a31 = a[13], a32 = a[14], a33 = a[15];
+      const b00 = b[0], b01 = b[1], b02 = b[2], b03 = b[3];
+      const b10 = b[4], b11 = b[5], b12 = b[6], b13 = b[7];
+      const b20 = b[8], b21 = b[9], b22 = b[10], b23 = b[11];
+      const b30 = b[12], b31 = b[13], b32 = b[14], b33 = b[15];
+      o[0] = a00 * b00 + a10 * b01 + a20 * b02 + a30 * b03;
+      o[1] = a01 * b00 + a11 * b01 + a21 * b02 + a31 * b03;
+      o[2] = a02 * b00 + a12 * b01 + a22 * b02 + a32 * b03;
+      o[3] = a03 * b00 + a13 * b01 + a23 * b02 + a33 * b03;
+      o[4] = a00 * b10 + a10 * b11 + a20 * b12 + a30 * b13;
+      o[5] = a01 * b10 + a11 * b11 + a21 * b12 + a31 * b13;
+      o[6] = a02 * b10 + a12 * b11 + a22 * b12 + a32 * b13;
+      o[7] = a03 * b10 + a13 * b11 + a23 * b12 + a33 * b13;
+      o[8] = a00 * b20 + a10 * b21 + a20 * b22 + a30 * b23;
+      o[9] = a01 * b20 + a11 * b21 + a21 * b22 + a31 * b23;
+      o[10] = a02 * b20 + a12 * b21 + a22 * b22 + a32 * b23;
+      o[11] = a03 * b20 + a13 * b21 + a23 * b22 + a33 * b23;
+      o[12] = a00 * b30 + a10 * b31 + a20 * b32 + a30 * b33;
+      o[13] = a01 * b30 + a11 * b31 + a21 * b32 + a31 * b33;
+      o[14] = a02 * b30 + a12 * b31 + a22 * b32 + a32 * b33;
+      o[15] = a03 * b30 + a13 * b31 + a23 * b32 + a33 * b33;
+      return o;
+    }
+    function m4t(x, y, z) { const o = m4(); o[12] = x; o[13] = y; o[14] = z; return o; }
+    function m4s(x, y, z) { const o = m4(); o[0] = x; o[5] = y; o[10] = z; return o; }
+    function m4rx(a) { const o = m4(); const c = Math.cos(a), s = Math.sin(a); o[5] = c; o[6] = s; o[9] = -s; o[10] = c; return o; }
+    function m4ry(a) { const o = m4(); const c = Math.cos(a), s = Math.sin(a); o[0] = c; o[2] = -s; o[8] = s; o[10] = c; return o; }
+    function m4rz(a) { const o = m4(); const c = Math.cos(a), s = Math.sin(a); o[0] = c; o[1] = s; o[4] = -s; o[5] = c; return o; }
+    function m4persp(fovy, aspect, near, far) {
+      const f = 1 / Math.tan(fovy / 2);
+      const nf = 1 / (near - far);
+      const o = new Float32Array(16);
+      o[0] = f / aspect;
+      o[5] = f;
+      o[10] = (far + near) * nf;
+      o[11] = -1;
+      o[14] = (2 * far * near) * nf;
+      return o;
+    }
+    function v3sub(a, b) { return v3(a[0] - b[0], a[1] - b[1], a[2] - b[2]); }
+    function v3dot(a, b) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+    function v3cross(a, b) { return v3(a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]); }
+    function v3norm(a) { const l = Math.hypot(a[0], a[1], a[2]) || 1; return v3(a[0] / l, a[1] / l, a[2] / l); }
+    function m4look(eye, at, up) {
+      const z = v3norm(v3sub(eye, at));
+      const x = v3norm(v3cross(up, z));
+      const y = v3cross(z, x);
+      const o = m4();
+      o[0] = x[0]; o[1] = y[0]; o[2] = z[0];
+      o[4] = x[1]; o[5] = y[1]; o[6] = z[1];
+      o[8] = x[2]; o[9] = y[2]; o[10] = z[2];
+      o[12] = -v3dot(x, eye);
+      o[13] = -v3dot(y, eye);
+      o[14] = -v3dot(z, eye);
+      return o;
+    }
+
+    function glCreate(gl, type, src) {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+        throw new Error(gl.getShaderInfoLog(sh) || "shader");
+      }
+      return sh;
+    }
+    function glProgram(gl, vs, fs) {
+      const p = gl.createProgram();
+      gl.attachShader(p, glCreate(gl, gl.VERTEX_SHADER, vs));
+      gl.attachShader(p, glCreate(gl, gl.FRAGMENT_SHADER, fs));
+      gl.linkProgram(p);
+      if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+        throw new Error(gl.getProgramInfoLog(p) || "program");
+      }
+      return p;
+    }
+    function glMesh(gl, verts, norms, idx) {
+      const vao = gl.createVertexArray();
+      gl.bindVertexArray(vao);
+      const vbo = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+      const nbo = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, nbo);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(norms), gl.STATIC_DRAW);
+      const ebo = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
+      return { vao, vbo, nbo, ebo, count: idx.length };
+    }
+    function makeSphere(seg = 12, ring = 10) {
+      const v = [];
+      const n = [];
+      const idx = [];
+      for (let y = 0; y <= ring; y++) {
+        const vY = y / ring;
+        const th = vY * Math.PI;
+        const st = Math.sin(th), ct = Math.cos(th);
+        for (let x = 0; x <= seg; x++) {
+          const vX = x / seg;
+          const ph = vX * Math.PI * 2;
+          const sp = Math.sin(ph), cp = Math.cos(ph);
+          const nx = cp * st;
+          const ny = sp * st;
+          const nz = ct;
+          v.push(nx, ny, nz);
+          n.push(nx, ny, nz);
+        }
+      }
+      const row = seg + 1;
+      for (let y = 0; y < ring; y++) {
+        for (let x = 0; x < seg; x++) {
+          const a = y * row + x;
+          const b = a + row;
+          idx.push(a, b, a + 1, b, b + 1, a + 1);
+        }
+      }
+      return { v, n, idx };
+    }
+    function makeCube() {
+      const v = [
+        -1,-1, 1,  1,-1, 1,  1, 1, 1, -1, 1, 1,
+        -1,-1,-1, -1, 1,-1,  1, 1,-1,  1,-1,-1,
+        -1, 1,-1, -1, 1, 1,  1, 1, 1,  1, 1,-1,
+        -1,-1,-1,  1,-1,-1, 1,-1, 1, -1,-1, 1,
+         1,-1,-1,  1, 1,-1, 1, 1, 1,  1,-1, 1,
+        -1,-1,-1, -1,-1, 1, -1, 1, 1, -1, 1,-1
+      ];
+      const n = [
+         0, 0, 1,  0, 0, 1,  0, 0, 1,  0, 0, 1,
+         0, 0,-1,  0, 0,-1,  0, 0,-1,  0, 0,-1,
+         0, 1, 0,  0, 1, 0,  0, 1, 0,  0, 1, 0,
+         0,-1, 0,  0,-1, 0,  0,-1, 0,  0,-1, 0,
+         1, 0, 0,  1, 0, 0,  1, 0, 0,  1, 0, 0,
+        -1, 0, 0, -1, 0, 0, -1, 0, 0, -1, 0, 0
+      ];
+      const idx = [];
+      for (let i = 0; i < 6; i++) {
+        const o = i * 4;
+        idx.push(o, o + 1, o + 2, o, o + 2, o + 3);
+      }
+      return { v, n, idx };
+    }
+
+    const astronaut3D = (() => {
+      let gl = null;
+      let prog = null;
+      let loc = null;
+      let meshSphere = null;
+      let meshCube = null;
+      let ready = false;
+      let lastPose = null;
+
+      function init() {
+        try {
+          gl = p3dCanvas.getContext("webgl2", { alpha: true, antialias: true, preserveDrawingBuffer: true });
+          if (!gl) return;
+          const vs = `
+            precision mediump float;
+            layout(location=0) in vec3 aPos;
+            layout(location=1) in vec3 aNor;
+            uniform mat4 uViewProj;
+            uniform mat4 uModel;
+            uniform vec3 uColor;
+            out vec3 vN;
+            out vec3 vC;
+            void main() {
+              vec4 wp = uModel * vec4(aPos, 1.0);
+              vN = mat3(uModel) * aNor;
+              vC = uColor;
+              gl_Position = uViewProj * wp;
+            }
+          `;
+          const fs = `
+            precision mediump float;
+            in vec3 vN;
+            in vec3 vC;
+            out vec4 outColor;
+            void main() {
+              vec3 n = normalize(vN);
+              vec3 l = normalize(vec3(0.35, -0.55, 0.72));
+              float dif = max(dot(n, l), 0.0);
+              vec3 col = vC * (0.22 + dif * 0.95);
+              outColor = vec4(col, 1.0);
+            }
+          `;
+          prog = glProgram(gl, vs, fs);
+          loc = {
+            uViewProj: gl.getUniformLocation(prog, "uViewProj"),
+            uModel: gl.getUniformLocation(prog, "uModel"),
+            uColor: gl.getUniformLocation(prog, "uColor")
+          };
+          const s = makeSphere(14, 10);
+          const c = makeCube();
+          meshSphere = glMesh(gl, s.v, s.n, s.idx);
+          meshCube = glMesh(gl, c.v, c.n, c.idx);
+
+          gl.enable(gl.DEPTH_TEST);
+          gl.enable(gl.CULL_FACE);
+          gl.cullFace(gl.BACK);
+          ready = true;
+        } catch {
+          ready = false;
+        }
+      }
+
+      function useMesh(mesh) {
+        gl.bindVertexArray(mesh.vao);
+        gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, mesh.nbo);
+        gl.enableVertexAttribArray(1);
+        gl.vertexAttribPointer(1, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ebo);
+      }
+
+      function draw(mesh, model, color) {
+        gl.uniformMatrix4fv(loc.uModel, false, model);
+        gl.uniform3fv(loc.uColor, color);
+        useMesh(mesh);
+        gl.drawElements(gl.TRIANGLES, mesh.count, gl.UNSIGNED_SHORT, 0);
+      }
+
+      function poseFor(anim, t, facing) {
+        const w = Math.sin(t * Math.PI * 2);
+        const w2 = Math.sin(t * Math.PI * 4);
+        const o = {
+          uaL: 0, uaR: 0, faL: 0, faR: 0, thL: 0, thR: 0, shL: 0, shR: 0,
+          spine: 0, head: 0, lean: 0, drop: 0, twist: facing
+        };
+        if (anim === "Idle") {
+          o.spine = Math.sin(t * 2) * 0.05;
+          o.head = -o.spine * 0.7;
+          o.uaL = 0.2 + Math.sin(t * 2) * 0.04;
+          o.uaR = -0.2 - Math.sin(t * 2) * 0.04;
+        } else if (anim === "Walk") {
+          o.uaL = 0.55 * w;
+          o.uaR = -0.55 * w;
+          o.thL = -0.75 * w;
+          o.thR = 0.75 * w;
+          o.shL = 0.35 * Math.max(0, -w);
+          o.shR = 0.35 * Math.max(0, w);
+          o.spine = 0.06 * w2;
+        } else if (anim === "Run") {
+          o.uaL = 0.85 * w;
+          o.uaR = -0.85 * w;
+          o.thL = -1.05 * w;
+          o.thR = 1.05 * w;
+          o.lean = -0.18;
+        } else if (anim === "Attack") {
+          const k = Math.min(1, t / 0.16);
+          const k2 = Math.min(1, Math.max(0, (t - 0.16) / 0.18));
+          o.uaR = -1.3 * k + 0.9 * k2;
+          o.faR = -0.6 * k + 0.4 * k2;
+          o.uaL = 0.25;
+          o.twist += -0.18 * k;
+        } else if (anim === "Hit") {
+          const k = Math.min(1, t / 0.1);
+          const k2 = Math.min(1, Math.max(0, (t - 0.1) / 0.2));
+          o.spine = 0.22 * k - 0.22 * k2;
+          o.head = -0.18 * k + 0.18 * k2;
+          o.uaL = 0.25;
+          o.uaR = -0.25;
+        } else if (anim === "Death") {
+          const k = Math.min(1, t / 0.9);
+          o.drop = -0.32 * k;
+          o.lean = -1.05 * k;
+          o.uaL = 1.05 * k;
+          o.uaR = -1.05 * k;
+          o.thL = 0.55 * k;
+          o.thR = 0.55 * k;
+          o.twist += 0.35 * k;
+        }
+        return o;
+      }
+
+      function render(animName, animT, facing) {
+        if (!ready) init();
+        if (!ready) return null;
+        const a = poseFor(animName, animT, facing);
+        lastPose = a;
+        gl.viewport(0, 0, p3dCanvas.width, p3dCanvas.height);
+        gl.clearColor(0, 0, 0, 0);
+        gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+        gl.useProgram(prog);
+
+        const aspect = p3dCanvas.width / p3dCanvas.height;
+        const proj = m4persp(Math.PI / 3.0, aspect, 0.1, 20);
+        const eye = v3(1.55, -1.55, 1.25);
+        const at = v3(0, 0, 0.85);
+        const view = m4look(eye, at, v3(0, 0, 1));
+        const vp = m4mul(view, m4());
+        const viewProj = m4mul(proj, view);
+        gl.uniformMatrix4fv(loc.uViewProj, false, viewProj);
+
+        const suit = new Float32Array([0.93, 0.95, 0.98]);
+        const trim = new Float32Array([0.20, 0.36, 0.95]);
+        const dark = new Float32Array([0.08, 0.10, 0.12]);
+        const gold = new Float32Array([1.0, 0.78, 0.32]);
+        const glass = new Float32Array([0.62, 0.88, 1.0]);
+
+        let root = m4();
+        root = m4mul(root, m4t(0, 0, a.drop));
+        root = m4mul(root, m4rz(a.twist));
+        root = m4mul(root, m4rx(a.lean));
+
+        const torso = m4mul(root, m4mul(m4t(0, 0, 0.86), m4s(0.24, 0.18, 0.30)));
+        draw(meshSphere, torso, suit);
+        const belt = m4mul(root, m4mul(m4t(0, 0, 0.73), m4s(0.25, 0.19, 0.05)));
+        draw(meshSphere, belt, trim);
+        const hip = m4mul(root, m4mul(m4t(0, 0, 0.62), m4s(0.22, 0.17, 0.18)));
+        draw(meshSphere, hip, suit);
+
+        const backpack = m4mul(root, m4mul(m4t(-0.18, 0, 0.88), m4s(0.12, 0.14, 0.18)));
+        draw(meshCube, backpack, dark);
+
+        const headBase = m4mul(root, m4mul(m4t(0, 0, 1.12), m4rx(a.spine)));
+        const head = m4mul(headBase, m4mul(m4t(0, 0, 0.10), m4mul(m4rx(a.head), m4s(0.22, 0.22, 0.22))));
+        draw(meshSphere, head, suit);
+        const helmet = m4mul(headBase, m4mul(m4t(0, 0, 0.10), m4s(0.255, 0.255, 0.255)));
+        draw(meshSphere, helmet, trim);
+        const visor = m4mul(headBase, m4mul(m4t(0.16, 0, 0.10), m4s(0.11, 0.15, 0.10)));
+        draw(meshSphere, visor, glass);
+        const badge = m4mul(root, m4mul(m4t(0.20, 0.10, 0.92), m4s(0.05, 0.02, 0.02)));
+        draw(meshCube, badge, gold);
+
+        const shoulderZ = 0.95;
+        const uaLen = 0.22;
+        const faLen = 0.22;
+
+        const uaL = m4mul(root, m4mul(m4t(0.05, 0.22, shoulderZ), m4mul(m4rx(0), m4ry(0))));
+        const uaL2 = m4mul(uaL, m4mul(m4rz(a.uaL), m4mul(m4t(0, 0.10, -0.06), m4s(0.07, 0.12, 0.07))));
+        draw(meshCube, uaL2, suit);
+        const faL2 = m4mul(uaL, m4mul(m4rz(a.uaL * 0.5), m4mul(m4t(0, 0.24, -0.14), m4s(0.065, 0.12, 0.065))));
+        draw(meshCube, faL2, suit);
+        const glL = m4mul(uaL, m4mul(m4t(0, 0.34, -0.20), m4s(0.075, 0.075, 0.075)));
+        draw(meshSphere, glL, trim);
+
+        const uaR = m4mul(root, m4mul(m4t(0.05, -0.22, shoulderZ), m4()));
+        const uaR2 = m4mul(uaR, m4mul(m4rz(a.uaR), m4mul(m4t(0, -0.10, -0.06), m4s(0.07, 0.12, 0.07))));
+        draw(meshCube, uaR2, suit);
+        const faR2 = m4mul(uaR, m4mul(m4rz(a.uaR * 0.5 + a.faR), m4mul(m4t(0, -0.24, -0.14), m4s(0.065, 0.12, 0.065))));
+        draw(meshCube, faR2, suit);
+        const glR = m4mul(uaR, m4mul(m4t(0, -0.34, -0.20), m4s(0.075, 0.075, 0.075)));
+        draw(meshSphere, glR, trim);
+
+        const hipZ = 0.58;
+        const thL = m4mul(root, m4mul(m4t(0.00, 0.10, hipZ), m4rx(a.thL)));
+        const thL2 = m4mul(thL, m4mul(m4t(0, 0, -0.15), m4s(0.085, 0.085, 0.18)));
+        draw(meshSphere, thL2, suit);
+        const shL2 = m4mul(thL, m4mul(m4t(0.07, 0.00, -0.35), m4mul(m4rx(a.shL), m4s(0.08, 0.08, 0.18))));
+        draw(meshSphere, shL2, suit);
+        const btL = m4mul(thL, m4mul(m4t(0.13, 0.00, -0.50), m4s(0.10, 0.07, 0.05)));
+        draw(meshCube, btL, dark);
+
+        const thR = m4mul(root, m4mul(m4t(0.00, -0.10, hipZ), m4rx(a.thR)));
+        const thR2 = m4mul(thR, m4mul(m4t(0, 0, -0.15), m4s(0.085, 0.085, 0.18)));
+        draw(meshSphere, thR2, suit);
+        const shR2 = m4mul(thR, m4mul(m4t(0.07, 0.00, -0.35), m4mul(m4rx(a.shR), m4s(0.08, 0.08, 0.18))));
+        draw(meshSphere, shR2, suit);
+        const btR = m4mul(thR, m4mul(m4t(0.13, 0.00, -0.50), m4s(0.10, 0.07, 0.05)));
+        draw(meshCube, btR, dark);
+
+        return lastPose;
+      }
+
+      return { render };
+    })();
+
+    const DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+    function resize() {
+      canvas.width = Math.floor(window.innerWidth * DPR);
+      canvas.height = Math.floor(window.innerHeight * DPR);
+    }
+    window.addEventListener("resize", resize);
+    resize();
+
+    function clamp(v, a, b) { return Math.max(a, Math.min(b, v)); }
+    function len(x, y) { return Math.hypot(x, y); }
+    function norm(x, y) { const l = Math.hypot(x, y) || 1; return [x / l, y / l]; }
+    function dist(a, b) { return Math.hypot(a.x - b.x, a.y - b.y); }
+    function rand(a, b) { return a + Math.random() * (b - a); }
+    function pick(arr) { return arr[(Math.random() * arr.length) | 0]; }
+    function now() { return performance.now(); }
+
+    const SAVE_KEY = "starfall_wilds_save_v1";
+    const SETTINGS_KEY = "starfall_wilds_settings_v1";
+
+    const keys = new Set();
+    let mouse = { x: 0, y: 0, down: false };
+    window.addEventListener("keydown", (e) => {
+      if (e.key === " ") e.preventDefault();
+      keys.add(e.key.toLowerCase());
+      if (e.key.toLowerCase() === "b") toggleBuildMode();
+      if (e.key.toLowerCase() === "e") toggleCraftIfNear();
+      if (e.key.toLowerCase() === "i") toggleBag();
+      if (e.key.toLowerCase() === "o") toggleOptions();
+      if (e.key.toLowerCase() === "f5") { e.preventDefault(); saveGame(true); }
+      if (e.key.toLowerCase() === "f9") { e.preventDefault(); loadGame(true); }
+      if (e.key.toLowerCase() === "escape") closePanels();
+      if (state.mode === "build") {
+        if (e.key === "1") state.buildKind = "workbench";
+        if (e.key === "2") state.buildKind = "turret";
+        if (e.key === "3") state.buildKind = "wall";
+        if (e.key === "4") state.buildKind = "brick";
+        if (e.key === "5") state.buildKind = "plank";
+        if (e.key === "6") state.buildKind = "wood";
+        if (e.key === "7") state.buildKind = "stone";
+      } else {
+        if (e.key === "1") equipHand("fist");
+        if (e.key === "2") equipHand("pick");
+        if (e.key === "3") equipHand("bandage");
+      }
+    });
+    window.addEventListener("keyup", (e) => keys.delete(e.key.toLowerCase()));
+    window.addEventListener("mousemove", (e) => {
+      mouse.x = e.clientX;
+      mouse.y = e.clientY;
+    });
+    window.addEventListener("mousedown", (e) => {
+      if (e.button === 0) mouse.down = true;
+      if (state.running && e.button === 0) onPrimary();
+    });
+    window.addEventListener("mouseup", (e) => {
+      if (e.button === 0) mouse.down = false;
+    });
+
+    const state = {
+      running: false,
+      mode: "play",
+      buildKind: "workbench",
+      craftOpen: false,
+      buildOpen: false,
+      bagOpen: false,
+      optionsOpen: false,
+      toastUntil: 0,
+      toastText: "",
+      waveTimer: 60,
+      waveIndex: 0,
+      threat: 0,
+      dnTime: 0,
+      isNight: false,
+      dayLen: 70,
+      nightLen: 50,
+      autosave: true,
+      autosaveTimer: 0,
+      use3DPlayer: true,
+      t: 0,
+      playerAnim: "Idle",
+      playerAnimT: 0,
+      playerAnimLock: 0
+    };
+
+    const items = {
+      wood: { name: "废金属", color: "#B98E6A" },
+      stone: { name: "矿石碎块", color: "#AAB4C2" },
+      fiber: { name: "聚合纤维", color: "#6FE59D" },
+      gland: { name: "生物凝胶", color: "#FF7FB0" },
+      plank: { name: "合金板", color: "#D6B88A" },
+      brick: { name: "复合砖", color: "#CBD6EA" },
+      bandage: { name: "医疗贴", color: "#EDEDED" },
+      workbench: { name: "组装工作台", color: "#F2D18A" },
+      turret: { name: "哨戒炮套件", color: "#9CC6FF" },
+      wall: { name: "防御墙块", color: "#D2DCEB" }
+    };
+
+    const bagPlaceOrder = ["workbench", "turret", "wall", "brick", "plank", "wood", "stone", "fiber", "gland", "bandage"];
+
+    function makeInventory() {
+      return { wood: 8, stone: 6, fiber: 4, gland: 0, plank: 0, brick: 0, bandage: 0, workbench: 0, turret: 0, wall: 0 };
+    }
+
+    function toast(text, ms = 1400) {
+      state.toastText = text;
+      state.toastUntil = now() + ms;
+      uiToast.style.display = "block";
+      uiToast.textContent = text;
+    }
+
+    function invHas(inv, cost) {
+      for (const k in cost) if ((inv[k] || 0) < cost[k]) return false;
+      return true;
+    }
+
+    function invPay(inv, cost) {
+      for (const k in cost) inv[k] = (inv[k] || 0) - cost[k];
+    }
+
+    function invGain(inv, gain) {
+      for (const k in gain) inv[k] = (inv[k] || 0) + gain[k];
+    }
+
+    function fmtInv(inv) {
+      const show = ["workbench", "turret", "wall", "brick", "plank", "wood", "stone", "fiber", "gland", "bandage"];
+      return show.map((k) => `${items[k].name} <span class="k">${inv[k] || 0}</span>`).join(" · ");
+    }
+
+    function resetWorld() {
+      world.player = makePlayer();
+      world.base = { x: 0, y: 0, r: 140 };
+      world.entities = [];
+      world.nodes = [];
+      world.projectiles = [];
+      world.structures = [];
+      world.fx = [];
+      world.drops = [];
+      state.mode = "play";
+      state.buildKind = "workbench";
+      state.craftOpen = false;
+      state.buildOpen = false;
+      state.waveTimer = 60;
+      state.waveIndex = 0;
+      state.threat = 0;
+      state.dnTime = 0;
+      state.isNight = false;
+      state.autosaveTimer = 0;
+      state.playerAnim = "Idle";
+      state.playerAnimT = 0;
+      state.playerAnimLock = 0;
+      seedNodes();
+      seedStarterStructures();
+      updatePanels();
+      closePanels();
+      toast("坠星营地已建立");
+    }
+
+    function makePlayer() {
+      return {
+        x: 0, y: 0,
+        r: 14,
+        hp: 100, hpMax: 100,
+        stamina: 100, staminaMax: 100,
+        atk: 12,
+        atkCd: 0,
+        rollCd: 0,
+        inv: makeInventory(),
+        nearWorkbench: null,
+        hand: "fist"
+      };
+    }
+
+    const world = {
+      player: makePlayer(),
+      base: { x: 0, y: 0, r: 140 },
+      nodes: [],
+      entities: [],
+      projectiles: [],
+      structures: [],
+      fx: [],
+      drops: []
+    };
+
+    const nodeTypes = [
+      { kind: "wood", name: "金属残骸", hp: 28, gain: { wood: [2, 4] }, color: "#B98E6A" },
+      { kind: "stone", name: "矿石堆", hp: 34, gain: { stone: [2, 4] }, color: "#AAB4C2" },
+      { kind: "fiber", name: "聚合纤维团", hp: 22, gain: { fiber: [2, 4] }, color: "#6FE59D" }
+    ];
+
+    function seedNodes() {
+      const count = 120;
+      for (let i = 0; i < count; i++) {
+        const t = pick(nodeTypes);
+        const ang = rand(0, Math.PI * 2);
+        const rr = rand(220, 1600);
+        world.nodes.push({
+          id: cryptoId(),
+          type: t.kind,
+          name: t.name,
+          x: Math.cos(ang) * rr + rand(-60, 60),
+          y: Math.sin(ang) * rr + rand(-60, 60),
+          r: rand(16, 22),
+          hp: t.hp,
+          hpMax: t.hp,
+          color: t.color
+        });
+      }
+    }
+
+    function seedEnemies(n) {
+      for (let i = 0; i < n; i++) spawnEnemyFar();
+    }
+
+    function seedStarterStructures() {
+      world.structures.push(makeStructure("camp", 0, 0));
+      world.structures.push(makeStructure("workbench", 70, 0));
+    }
+
+    function cryptoId() {
+      if (window.crypto && crypto.getRandomValues) {
+        const a = new Uint32Array(2);
+        crypto.getRandomValues(a);
+        return `${a[0].toString(16)}${a[1].toString(16)}`;
+      }
+      return `${Math.random().toString(16).slice(2)}${Math.random().toString(16).slice(2)}`;
+    }
+
+    function makeEnemy(x, y) {
+      const kind = pick(["mush", "mush", "mush", "beetle"]);
+      const cfg = kind === "beetle"
+        ? { name: "破甲虫", hp: 66, spd: 62, r: 16, dmg: 10, color: "#E2C044", drop: { gland: [0, 1], stone: [0, 2] } }
+        : { name: "孢子兽", hp: 42, spd: 72, r: 14, dmg: 8, color: "#B58CFF", drop: { gland: [0, 2], fiber: [0, 2] } };
+      return {
+        id: cryptoId(),
+        kind,
+        x, y,
+        vx: 0, vy: 0,
+        r: cfg.r,
+        hp: cfg.hp, hpMax: cfg.hp,
+        spd: cfg.spd,
+        dmg: cfg.dmg,
+        name: cfg.name,
+        color: cfg.color,
+        atkCd: 0,
+        drop: cfg.drop,
+        target: "player"
+      };
+    }
+
+    function makeStructure(kind, x, y) {
+      if (kind === "workbench") {
+        return { id: cryptoId(), kind, x, y, r: 18, hp: 120, hpMax: 120 };
+      }
+      if (kind === "turret") {
+        return { id: cryptoId(), kind, x, y, r: 16, hp: 95, hpMax: 95, cd: 0, range: 420 };
+      }
+      if (kind === "wall") {
+        return { id: cryptoId(), kind, x, y, r: 12, hp: 160, hpMax: 160 };
+      }
+      return { id: cryptoId(), kind: "camp", x, y, r: 22, hp: 9999, hpMax: 9999 };
+    }
+
+    function makeProjectile(x, y, vx, vy, dmg, team) {
+      return { id: cryptoId(), x, y, vx, vy, r: 4, dmg, team, life: 1.3 };
+    }
+
+    function makeDrop(kind, x, y, count = 1) {
+      const r = kind === "bandage" ? 11 : 10;
+      return { id: cryptoId(), kind, x, y, r, count };
+    }
+
+    const recipes = [
+      { id: "plank", name: "合金板", desc: "金属加工，用于结构与设备。", cost: { wood: 2 }, gain: { plank: 1 } },
+      { id: "brick", name: "复合砖", desc: "矿石烧结 + 纤维粘结，用于防御结构。", cost: { stone: 2, fiber: 1 }, gain: { brick: 1 } },
+      { id: "bandage", name: "医疗贴", desc: "用于止血修复。", cost: { fiber: 2, gland: 1 }, gain: { bandage: 1 } },
+      { id: "workbench", name: "组装工作台", desc: "放置后可制作。", cost: { wood: 6, stone: 2 }, gain: { workbench: 1 } },
+      { id: "turret", name: "哨戒炮套件", desc: "夜晚自动攻击敌人。", cost: { wood: 6, stone: 6, gland: 1 }, gain: { turret: 1 } },
+      { id: "wall", name: "防御墙块", desc: "放置用于防守与分流。", cost: { stone: 3, fiber: 1 }, gain: { wall: 1 } }
+    ];
+
+    const buildables = {
+      workbench: { name: "组装工作台", cost: { wood: 6, stone: 2 } },
+      turret: { name: "哨戒炮", cost: { wood: 6, stone: 6, gland: 1 } },
+      wall: { name: "防御墙", cost: { stone: 3, fiber: 1 } }
+    };
+
+    function toggleBuildMode() {
+      if (!state.running) return;
+      if (state.mode === "build") {
+        state.mode = "play";
+        state.buildOpen = false;
+        uiTopRight.style.display = "none";
+        toast("退出建造模式");
+        return;
+      }
+      state.mode = "build";
+      state.buildOpen = true;
+      state.craftOpen = false;
+      state.bagOpen = false;
+      state.optionsOpen = false;
+      uiTopRight.style.display = "block";
+      toast("放置模式：左键放置，1-7 快捷切换");
+      updatePanels();
+    }
+
+    function closePanels() {
+      state.craftOpen = false;
+      state.bagOpen = false;
+      state.optionsOpen = false;
+      if (state.mode !== "build") state.buildOpen = false;
+      if (state.mode !== "build") uiTopRight.style.display = "none";
+      updatePanels();
+    }
+
+    function toggleBag() {
+      if (!state.running) return;
+      if (state.mode === "build") return;
+      state.bagOpen = !state.bagOpen;
+      state.craftOpen = false;
+      state.optionsOpen = false;
+      uiTopRight.style.display = state.bagOpen ? "block" : "none";
+      updatePanels();
+    }
+
+    function toggleOptions() {
+      if (!state.running) return;
+      if (state.mode === "build") return;
+      state.optionsOpen = !state.optionsOpen;
+      state.bagOpen = false;
+      state.craftOpen = false;
+      uiTopRight.style.display = state.optionsOpen ? "block" : "none";
+      updatePanels();
+    }
+
+    function getHandCfg(hand) {
+      if (hand === "pick") return { name: "采集镐", cd: 0.38, enemyDmg: 7, nodeDmg: 18 };
+      if (hand === "bandage") return { name: "医疗贴", cd: 0, enemyDmg: 0, nodeDmg: 0 };
+      return { name: "拳头", cd: 0.34, enemyDmg: 12, nodeDmg: 12 };
+    }
+
+    function equipHand(hand) {
+      const p = world.player;
+      if (p.hand === hand) return;
+      p.hand = hand;
+      const cfg = getHandCfg(hand);
+      toast(`手中：${cfg.name}`);
+      updatePanels();
+    }
+
+    function startPlacing(kind) {
+      if (!items[kind]) return;
+      state.mode = "build";
+      state.buildKind = kind;
+      state.buildOpen = true;
+      state.craftOpen = false;
+      state.bagOpen = false;
+      uiTopRight.style.display = "block";
+      toast(`放置模式：${buildables[kind]?.name || items[kind]?.name || kind}`);
+      updatePanels();
+    }
+
+    function nearestWorkbench() {
+      const p = world.player;
+      let best = null;
+      let bd = Infinity;
+      for (const s of world.structures) {
+        if (s.kind !== "workbench") continue;
+        const d = dist(p, s);
+        if (d < 90 && d < bd) { bd = d; best = s; }
+      }
+      return best;
+    }
+
+    function toggleCraftIfNear() {
+      if (!state.running) return;
+      const wb = nearestWorkbench();
+      if (!wb) { toast("附近没有工作台"); return; }
+      state.craftOpen = !state.craftOpen;
+      state.mode = "play";
+      state.buildOpen = false;
+      state.bagOpen = false;
+      state.optionsOpen = false;
+      uiTopRight.style.display = state.craftOpen ? "block" : "none";
+      updatePanels();
+    }
+
+    function craft(id) {
+      const p = world.player;
+      const r = recipes.find((x) => x.id === id);
+      if (!r) return;
+      if (!invHas(p.inv, r.cost)) { toast("材料不足"); return; }
+      invPay(p.inv, r.cost);
+      invGain(p.inv, r.gain);
+      toast(`制作：${r.name}`);
+      updatePanels();
+      if (state.autosave) saveGame(false);
+    }
+
+    function useBandage() {
+      const p = world.player;
+      if ((p.inv.bandage || 0) <= 0) { toast("没有医疗贴"); return; }
+      if (p.hp >= p.hpMax) { toast("生命值已满"); return; }
+      p.inv.bandage -= 1;
+      p.hp = clamp(p.hp + 28, 0, p.hpMax);
+      toast("使用医疗贴 +28");
+      updatePanels();
+      if (state.autosave) saveGame(false);
+    }
+
+    function canPlaceAt(x, y, r) {
+      const p = world.player;
+      const baseDist = Math.hypot(x - world.base.x, y - world.base.y);
+      if (baseDist > 780) return false;
+      if (Math.hypot(x - p.x, y - p.y) > 240) return false;
+      for (const s of world.structures) if (Math.hypot(x - s.x, y - s.y) < r + s.r + 6) return false;
+      return true;
+    }
+
+    function placeStructure(kind, x, y) {
+      const p = world.player;
+      if (kind === "workbench" || kind === "turret" || kind === "wall") {
+        if ((p.inv[kind] || 0) <= 0) { toast("背包里没有该建筑"); return; }
+        const r = kind === "wall" ? 12 : 18;
+        if (!canPlaceAt(x, y, r)) { toast("无法放置"); return; }
+        p.inv[kind] -= 1;
+        world.structures.push(makeStructure(kind, x, y));
+        state.threat += kind === "turret" ? 3 : 1;
+        toast(`放置：${buildables[kind]?.name || items[kind]?.name || kind}`);
+        updatePanels();
+        if (state.autosave) saveGame(false);
+        return;
+      }
+      if (!items[kind]) return;
+      if ((p.inv[kind] || 0) <= 0) { toast("背包里没有该物品"); return; }
+      if (Math.hypot(x - p.x, y - p.y) > 240) { toast("离你太远"); return; }
+      p.inv[kind] -= 1;
+      world.drops.push(makeDrop(kind, x, y, 1));
+      toast(`放置：${items[kind].name}`);
+      updatePanels();
+      if (state.autosave) saveGame(false);
+    }
+
+    function onPrimary() {
+      if (overlay.style.display !== "none") return;
+      if (state.mode === "build") {
+        const w = screenToWorld(mouse.x, mouse.y);
+        placeStructure(state.buildKind, w.x, w.y);
+        return;
+      }
+      const p = world.player;
+      if (p.hand === "bandage") {
+        useBandage();
+        return;
+      }
+      attack();
+    }
+
+    function playPlayerAnim(name, lockSec) {
+      if (state.playerAnim === "Death") return;
+      state.playerAnim = name;
+      state.playerAnimT = 0;
+      state.playerAnimLock = Math.max(state.playerAnimLock, lockSec || 0);
+    }
+
+    function attack() {
+      const p = world.player;
+      if (p.atkCd > 0) return;
+      const cfg = getHandCfg(p.hand);
+      p.atkCd = cfg.cd;
+      playPlayerAnim("Attack", 0.42);
+      const aim = screenToWorld(mouse.x, mouse.y);
+      const dx = aim.x - p.x, dy = aim.y - p.y;
+      const [nx, ny] = norm(dx, dy);
+      const ax = p.x + nx * 24;
+      const ay = p.y + ny * 24;
+      world.fx.push({ t: 0, x: ax, y: ay, kind: "slash" });
+
+      let hit = false;
+      for (const e of world.entities) {
+        const d = Math.hypot(e.x - ax, e.y - ay);
+        if (d < e.r + 18) {
+          const enemyDmg = p.hand === "fist" ? p.atk : cfg.enemyDmg;
+          damageEnemy(e, enemyDmg);
+          knock(e, nx * 180, ny * 180);
+          hit = true;
+        }
+      }
+      for (const n of world.nodes) {
+        const d = Math.hypot(n.x - ax, n.y - ay);
+        if (d < n.r + 18) {
+          harvestNode(n, cfg.nodeDmg);
+          hit = true;
+        }
+      }
+      if (!hit) {
+        state.threat = Math.max(0, state.threat - 0.05);
+      }
+    }
+
+    function roll() {
+      const p = world.player;
+      if (p.rollCd > 0) return;
+      if (p.stamina < 20) { toast("体力不足"); return; }
+      p.stamina -= 20;
+      p.rollCd = 0.9;
+      const aim = screenToWorld(mouse.x, mouse.y);
+      const [nx, ny] = norm(aim.x - p.x, aim.y - p.y);
+      p.x += nx * 86;
+      p.y += ny * 86;
+      world.fx.push({ t: 0, x: p.x, y: p.y, kind: "roll" });
+    }
+
+    function harvestNode(node, dmg) {
+      node.hp -= dmg;
+      world.fx.push({ t: 0, x: node.x, y: node.y, kind: "hit", color: node.color });
+      if (node.hp > 0) return;
+      const t = nodeTypes.find((x) => x.kind === node.type);
+      if (!t) return;
+      const gain = {};
+      for (const k in t.gain) {
+        const [a, b] = t.gain[k];
+        gain[k] = (rand(a, b + 1) | 0);
+      }
+      invGain(world.player.inv, gain);
+      world.nodes = world.nodes.filter((x) => x.id !== node.id);
+      toast(`采集：${items[node.type].name} +${Object.values(gain)[0]}`);
+      updatePanels();
+    }
+
+    function damageEnemy(e, dmg) {
+      e.hp -= dmg;
+      world.fx.push({ t: 0, x: e.x, y: e.y, kind: "hit", color: e.color });
+      if (e.hp > 0) return;
+      dropLoot(e);
+      world.entities = world.entities.filter((x) => x.id !== e.id);
+      state.threat = Math.max(0, state.threat - 0.4);
+      if (world.entities.length < 10) spawnEnemyFar();
+      updatePanels();
+    }
+
+    function knock(e, vx, vy) {
+      e.vx += vx;
+      e.vy += vy;
+    }
+
+    function dropLoot(e) {
+      const gain = {};
+      for (const k in e.drop) {
+        const [a, b] = e.drop[k];
+        const v = (rand(a, b + 1) | 0);
+        if (v > 0) gain[k] = (gain[k] || 0) + v;
+      }
+      if (Object.keys(gain).length) {
+        invGain(world.player.inv, gain);
+        toast(`掉落：${Object.keys(gain).map((k) => `${items[k].name}+${gain[k]}`).join(" ")}`);
+      } else {
+        toast("击败敌人");
+      }
+    }
+
+    function spawnEnemyFar(force = false) {
+      if (!force && !state.isNight) return;
+      const p = world.player;
+      const ang = rand(0, Math.PI * 2);
+      const rr = rand(560, 980);
+      const x = p.x + Math.cos(ang) * rr;
+      const y = p.y + Math.sin(ang) * rr;
+      world.entities.push(makeEnemy(x, y));
+    }
+
+    function spawnWave() {
+      if (!state.isNight) return;
+      state.waveIndex += 1;
+      const n = Math.min(18, 6 + state.waveIndex * 2);
+      const base = world.base;
+      for (let i = 0; i < n; i++) {
+        const ang = rand(0, Math.PI * 2);
+        const rr = rand(base.r + 260, base.r + 520);
+        world.entities.push(makeEnemy(base.x + Math.cos(ang) * rr, base.y + Math.sin(ang) * rr));
+      }
+      toast(`围攻来袭（第 ${state.waveIndex} 波）`, 2200);
+      state.threat += 1.5;
+    }
+
+    function updateEnemy(dt, e) {
+      const p = world.player;
+      const base = world.base;
+      const target = e.target === "base" ? base : p;
+      const dx = target.x - e.x;
+      const dy = target.y - e.y;
+      const d = Math.hypot(dx, dy);
+
+      const wantBase = state.threat > 6 || state.waveTimer < 10;
+      e.target = wantBase ? "base" : "player";
+
+      const [nx, ny] = norm(dx, dy);
+      const accel = 260;
+      if (d > e.r + (e.target === "base" ? base.r : p.r) + 2) {
+        e.vx += nx * accel * dt;
+        e.vy += ny * accel * dt;
+      }
+
+      const drag = 6.2;
+      e.vx *= Math.exp(-drag * dt);
+      e.vy *= Math.exp(-drag * dt);
+
+      const spd = e.spd;
+      e.x += clamp(e.vx, -spd, spd) * dt;
+      e.y += clamp(e.vy, -spd, spd) * dt;
+
+      e.atkCd = Math.max(0, e.atkCd - dt);
+      const hitR = e.r + (e.target === "base" ? base.r : p.r);
+      if (d < hitR + 2 && e.atkCd <= 0) {
+        e.atkCd = 0.9;
+        if (e.target === "base") {
+          world.fx.push({ t: 0, x: base.x + nx * base.r, y: base.y + ny * base.r, kind: "hit", color: e.color });
+          state.threat += 0.35;
+        } else {
+          p.hp = clamp(p.hp - e.dmg, 0, p.hpMax);
+          world.fx.push({ t: 0, x: p.x, y: p.y, kind: "hit", color: "#FF6B6B" });
+          playPlayerAnim("Hit", 0.28);
+          if (p.hp <= 0) onLose();
+        }
+      }
+    }
+
+    function updateStructure(dt, s) {
+      if (s.kind !== "turret") return;
+      s.cd = Math.max(0, s.cd - dt);
+      if (s.cd > 0) return;
+      let best = null;
+      let bd = Infinity;
+      for (const e of world.entities) {
+        const d = Math.hypot(e.x - s.x, e.y - s.y);
+        if (d < s.range && d < bd) { bd = d; best = e; }
+      }
+      if (!best) return;
+      s.cd = 0.22;
+      const [nx, ny] = norm(best.x - s.x, best.y - s.y);
+      world.projectiles.push(makeProjectile(s.x + nx * 18, s.y + ny * 18, nx * 820, ny * 820, 7, "player"));
+      world.fx.push({ t: 0, x: s.x + nx * 16, y: s.y + ny * 16, kind: "shot" });
+    }
+
+    function updateProjectiles(dt) {
+      for (const pr of world.projectiles) {
+        pr.x += pr.vx * dt;
+        pr.y += pr.vy * dt;
+        pr.life -= dt;
+      }
+      world.projectiles = world.projectiles.filter((p) => p.life > 0);
+      for (const pr of world.projectiles) {
+        if (pr.team !== "player") continue;
+        for (const e of world.entities) {
+          const d = Math.hypot(e.x - pr.x, e.y - pr.y);
+          if (d < e.r + pr.r) {
+            pr.life = 0;
+            damageEnemy(e, pr.dmg);
+            break;
+          }
+        }
+      }
+      world.projectiles = world.projectiles.filter((p) => p.life > 0);
+    }
+
+    function updateFX(dt) {
+      for (const fx of world.fx) fx.t += dt;
+      world.fx = world.fx.filter((f) => f.t < 0.45);
+    }
+
+    function updatePlayer(dt) {
+      const p = world.player;
+      const ax = (keys.has("a") || keys.has("arrowleft") ? -1 : 0) + (keys.has("d") || keys.has("arrowright") ? 1 : 0);
+      const ay = (keys.has("w") || keys.has("arrowup") ? -1 : 0) + (keys.has("s") || keys.has("arrowdown") ? 1 : 0);
+      const [nx, ny] = norm(ax, ay);
+      const moving = ax !== 0 || ay !== 0;
+      p.moving = moving;
+      const spd = 168;
+      if (moving) {
+        p.x += nx * spd * dt;
+        p.y += ny * spd * dt;
+      }
+
+      p.atkCd = Math.max(0, p.atkCd - dt);
+      p.rollCd = Math.max(0, p.rollCd - dt);
+      if (keys.has("shift") && p.rollCd <= 0) roll();
+
+      if (moving) p.stamina = clamp(p.stamina + 18 * dt, 0, p.staminaMax);
+      else p.stamina = clamp(p.stamina + 28 * dt, 0, p.staminaMax);
+
+      p.nearWorkbench = nearestWorkbench();
+    }
+
+    function pickupDrops() {
+      const p = world.player;
+      let changed = false;
+      const kept = [];
+      for (const d of world.drops) {
+        const dd = Math.hypot(d.x - p.x, d.y - p.y);
+        if (dd < p.r + d.r + 8) {
+          p.inv[d.kind] = (p.inv[d.kind] || 0) + (d.count || 1);
+          changed = true;
+        } else {
+          kept.push(d);
+        }
+      }
+      world.drops = kept;
+      if (changed) updatePanels();
+      if (changed && state.autosave) saveGame(false);
+    }
+
+    function onLose() {
+      playPlayerAnim("Death", 999);
+      state.running = false;
+      overlay.style.display = "flex";
+      toast("你倒下了。点击“新游戏”再来一次。", 3000);
+    }
+
+    function updatePanels() {
+      const p = world.player;
+      const hpPct = Math.round((p.hp / p.hpMax) * 100);
+      const stPct = Math.round((p.stamina / p.staminaMax) * 100);
+      const cycleLen = state.dayLen + state.nightLen;
+      const inCycle = ((state.dnTime % cycleLen) + cycleLen) % cycleLen;
+      const phaseLeft = state.isNight ? (cycleLen - inCycle) : (state.dayLen - inCycle);
+      const phaseText = state.isNight ? "夜晚" : "白天";
+      const phaseIn = Math.max(0, Math.ceil(phaseLeft));
+      const waveIn = Math.max(0, Math.ceil(state.waveTimer));
+      const handName = getHandCfg(p.hand).name;
+      uiTopLeft.innerHTML = `
+        <div class="row" style="justify-content: space-between;">
+          <div><strong>坠星营地</strong> <span class="muted">威胁</span> <span class="k">${state.threat.toFixed(1)}</span></div>
+          <div class="pill"><span class="muted">${phaseText}</span><span class="k">${phaseIn}s</span></div>
+        </div>
+        <div class="hr"></div>
+        <div class="row" style="justify-content: space-between;">
+          <div class="pill"><span class="muted">生命</span><span class="k">${p.hp}/${p.hpMax}</span></div>
+          <div class="pill"><span class="muted">体力</span><span class="k">${p.stamina | 0}/${p.staminaMax}</span></div>
+          <div class="btn" id="btnHeal">用医疗贴</div>
+          <div class="btn" id="btnBag">背包</div>
+          <div class="btn" id="btnOptions">选项</div>
+        </div>
+        <div style="margin-top: 10px;" class="row">
+          <div class="pill"><span class="muted">手中</span><span class="k">${handName}</span></div>
+          <div class="pill"><span class="muted">切换</span><span class="k">1/2/3</span></div>
+        </div>
+        ${state.isNight ? `
+          <div style="margin-top: 10px;" class="row">
+            <div class="pill"><span class="muted">围攻</span><span class="k">${waveIn}s</span></div>
+            <div class="pill"><span class="muted">波次</span><span class="k">${state.waveIndex}</span></div>
+          </div>
+        ` : `
+          <div style="margin-top: 10px;" class="muted">白天较安全：夜晚才会出现怪物。</div>
+        `}
+        <div style="margin-top: 10px; line-height: 1.55;">
+          <div class="muted">背包</div>
+          <div>${fmtInv(p.inv)}</div>
+        </div>
+      `;
+      const btnHeal = uiTopLeft.querySelector("#btnHeal");
+      btnHeal.addEventListener("click", () => useBandage(), { once: true });
+      const btnBag = uiTopLeft.querySelector("#btnBag");
+      btnBag.addEventListener("click", () => toggleBag(), { once: true });
+      const btnOptions = uiTopLeft.querySelector("#btnOptions");
+      btnOptions.addEventListener("click", () => toggleOptions(), { once: true });
+
+      uiBottomLeft.innerHTML = `
+        <div class="row" style="justify-content: space-between; flex-wrap: wrap;">
+          <div class="pill"><span class="muted">模式</span><span class="k">${state.mode === "build" ? "建造" : "行动"}</span></div>
+          <div class="pill"><span class="muted">放置</span><span class="k">${state.mode === "build" ? (buildables[state.buildKind]?.name || items[state.buildKind]?.name || "-") : "-"}</span></div>
+          <div class="pill"><span class="muted">附近</span><span class="k">${p.nearWorkbench ? "工作台（按 E 制作）" : "无工作台"}</span></div>
+        </div>
+        <div class="muted" style="margin-top: 10px; line-height: 1.55;">
+          WASD 移动 · 左键使用/放置 · Shift 翻滚 · I 背包 · B 放置模式 · O 选项 · F5 存档 · F9 读档 · Esc 关闭面板
+        </div>
+      `;
+
+      if (state.mode === "build") {
+        uiTopRight.style.display = "block";
+        const k = state.buildKind;
+        const name = buildables[k]?.name || items[k]?.name || "-";
+        const count = p.inv[k] || 0;
+        uiTopRight.innerHTML = `
+          <div class="row" style="justify-content: space-between;">
+            <div><strong>放置</strong> <span class="muted">（1-7切换 · 左键放置）</span></div>
+            <div class="btn" id="btnExitBuild">退出</div>
+          </div>
+          <div class="hr"></div>
+          <div class="grid">
+            <div class="item">
+              <div>
+                <strong>1 ${items.workbench.name}</strong>
+                <div class="muted">库存：<span class="k">${p.inv.workbench || 0}</span></div>
+              </div>
+              <div class="muted">${Object.keys(buildables.workbench.cost).map((x) => `${items[x].name}×${buildables.workbench.cost[x]}`).join(" ")}</div>
+            </div>
+            <div class="item">
+              <div>
+                <strong>2 ${items.turret.name}</strong>
+                <div class="muted">库存：<span class="k">${p.inv.turret || 0}</span></div>
+              </div>
+              <div class="muted">${Object.keys(buildables.turret.cost).map((x) => `${items[x].name}×${buildables.turret.cost[x]}`).join(" ")}</div>
+            </div>
+            <div class="item">
+              <div>
+                <strong>3 ${items.wall.name}</strong>
+                <div class="muted">库存：<span class="k">${p.inv.wall || 0}</span></div>
+              </div>
+              <div class="muted">${Object.keys(buildables.wall.cost).map((x) => `${items[x].name}×${buildables.wall.cost[x]}`).join(" ")}</div>
+            </div>
+            <div class="item">
+              <div>
+                <strong>4 ${items.brick.name}</strong>
+                <div class="muted">库存：<span class="k">${p.inv.brick || 0}</span></div>
+              </div>
+              <div class="muted">矿石×2 + 纤维×1 → 复合砖×1</div>
+            </div>
+            <div class="item">
+              <div>
+                <strong>5 ${items.plank.name}</strong>
+                <div class="muted">库存：<span class="k">${p.inv.plank || 0}</span></div>
+              </div>
+              <div class="muted">废金属×2 → 合金板×1</div>
+            </div>
+            <div class="item">
+              <div>
+                <strong>6 ${items.wood.name}</strong>
+                <div class="muted">库存：<span class="k">${p.inv.wood || 0}</span></div>
+              </div>
+              <div class="muted">放置后可捡回</div>
+            </div>
+            <div class="item">
+              <div>
+                <strong>7 ${items.stone.name}</strong>
+                <div class="muted">库存：<span class="k">${p.inv.stone || 0}</span></div>
+              </div>
+              <div class="muted">放置后可捡回</div>
+            </div>
+            <div class="item">
+              <div>
+                <strong>当前选择：${name}</strong>
+                <div class="muted">库存：<span class="k">${count}</span></div>
+                <div class="muted">提示：也可以按 I 打开背包，任意物品都能点“放置”。</div>
+              </div>
+              <div class="btn" id="btnSwitchCraft">制作</div>
+            </div>
+          </div>
+        `;
+        uiTopRight.querySelector("#btnExitBuild").addEventListener("click", () => toggleBuildMode(), { once: true });
+        uiTopRight.querySelector("#btnSwitchCraft").addEventListener("click", () => {
+          state.mode = "play";
+          state.buildOpen = false;
+          uiTopRight.style.display = "none";
+          toggleCraftIfNear();
+        }, { once: true });
+      } else if (state.craftOpen) {
+        uiTopRight.style.display = "block";
+        uiTopRight.innerHTML = `
+          <div class="row" style="justify-content: space-between;">
+            <div><strong>制作</strong> <span class="muted">（工作台）</span></div>
+            <div class="btn" id="btnCloseCraft">关闭</div>
+          </div>
+          <div class="hr"></div>
+          <div class="grid">
+            ${recipes.map((r) => `
+              <div class="item">
+                <div>
+                  <strong>${r.name}</strong>
+                  <div class="muted">${r.desc}</div>
+                  <div class="muted">成本：${Object.keys(r.cost).map((k) => `${items[k].name}×${r.cost[k]}`).join(" ")}</div>
+                </div>
+                <div class="btn" data-craft="${r.id}">制作</div>
+              </div>
+            `).join("")}
+            <div class="item">
+              <div>
+                <strong>小目标</strong>
+                <div class="muted">建造炮台，抵御下一波围攻。</div>
+              </div>
+              <div class="btn" id="btnOpenBuild">建造</div>
+            </div>
+          </div>
+        `;
+        uiTopRight.querySelector("#btnCloseCraft").addEventListener("click", () => closePanels(), { once: true });
+        uiTopRight.querySelectorAll("[data-craft]").forEach((el) => {
+          el.addEventListener("click", () => craft(el.getAttribute("data-craft")), { once: true });
+        });
+        uiTopRight.querySelector("#btnOpenBuild").addEventListener("click", () => toggleBuildMode(), { once: true });
+      } else if (state.bagOpen) {
+        uiTopRight.style.display = "block";
+        uiTopRight.innerHTML = `
+          <div class="row" style="justify-content: space-between;">
+            <div><strong>背包</strong> <span class="muted">（手中道具）</span></div>
+            <div class="btn" id="btnCloseBag">关闭</div>
+          </div>
+          <div class="hr"></div>
+          <div class="grid">
+            <div class="item">
+              <div>
+                <strong>1 拳头 ${p.hand === "fist" ? "（已装备）" : ""}</strong>
+                <div class="muted">均衡：打怪/采集。</div>
+              </div>
+              <div class="btn" data-hand="fist">装备</div>
+            </div>
+            <div class="item">
+              <div>
+                <strong>2 采集镐 ${p.hand === "pick" ? "（已装备）" : ""}</strong>
+                <div class="muted">采集更快，打怪较弱。</div>
+              </div>
+              <div class="btn" data-hand="pick">装备</div>
+            </div>
+            <div class="item">
+              <div>
+                <strong>3 医疗贴 ${p.hand === "bandage" ? "（已装备）" : ""}</strong>
+                <div class="muted">左键使用医疗贴（剩余 ${p.inv.bandage || 0}）。</div>
+              </div>
+              <div class="btn" data-hand="bandage">装备</div>
+            </div>
+            <div class="item">
+              <div>
+                <strong>放置物品</strong>
+                <div class="muted">点击任意物品“放置”进入放置模式，左键摆放。</div>
+              </div>
+              <div class="muted">可捡回</div>
+            </div>
+            ${bagPlaceOrder.map((k) => `
+              <div class="item">
+                <div>
+                  <strong>${items[k].name}</strong>
+                  <div class="muted">数量：<span class="k">${p.inv[k] || 0}</span></div>
+                </div>
+                <div class="btn" data-place="${k}">放置</div>
+              </div>
+            `).join("")}
+          </div>
+        `;
+        uiTopRight.querySelector("#btnCloseBag").addEventListener("click", () => closePanels(), { once: true });
+        uiTopRight.querySelectorAll("[data-hand]").forEach((el) => {
+          el.addEventListener("click", () => equipHand(el.getAttribute("data-hand")), { once: true });
+        });
+        uiTopRight.querySelectorAll("[data-place]").forEach((el) => {
+          el.addEventListener("click", () => startPlacing(el.getAttribute("data-place")), { once: true });
+        });
+      } else if (state.optionsOpen) {
+        uiTopRight.style.display = "block";
+        uiTopRight.innerHTML = `
+          <div class="row" style="justify-content: space-between;">
+            <div><strong>选项</strong> <span class="muted">（存档/显示）</span></div>
+            <div class="btn" id="btnCloseOptions">关闭</div>
+          </div>
+          <div class="hr"></div>
+          <div class="grid">
+            <div class="item">
+              <div>
+                <strong>自动存档</strong>
+                <div class="muted">每隔一段时间保存进度。</div>
+              </div>
+              <div class="btn" id="btnToggleAutosave">${state.autosave ? "已开启" : "已关闭"}</div>
+            </div>
+            <div class="item">
+              <div>
+                <strong>3D 主角</strong>
+                <div class="muted">启用宇航员 3D 模型渲染。</div>
+              </div>
+              <div class="btn" id="btnToggle3D">${state.use3DPlayer ? "已开启" : "已关闭"}</div>
+            </div>
+            <div class="item">
+              <div>
+                <strong>存档</strong>
+                <div class="muted">快捷键 F5</div>
+              </div>
+              <div class="btn" id="btnSave">存档</div>
+            </div>
+            <div class="item">
+              <div>
+                <strong>读档</strong>
+                <div class="muted">快捷键 F9</div>
+              </div>
+              <div class="btn" id="btnLoad">读档</div>
+            </div>
+            <div class="item">
+              <div>
+                <strong>返回主菜单</strong>
+                <div class="muted">可先存档再退出。</div>
+              </div>
+              <div class="btn" id="btnBackToMenu">返回</div>
+            </div>
+          </div>
+        `;
+        uiTopRight.querySelector("#btnCloseOptions").addEventListener("click", () => closePanels(), { once: true });
+        uiTopRight.querySelector("#btnSave").addEventListener("click", () => saveGame(true), { once: true });
+        uiTopRight.querySelector("#btnLoad").addEventListener("click", () => loadGame(true), { once: true });
+        uiTopRight.querySelector("#btnToggleAutosave").addEventListener("click", () => {
+          state.autosave = !state.autosave;
+          saveSettings();
+          updatePanels();
+        }, { once: true });
+        uiTopRight.querySelector("#btnToggle3D").addEventListener("click", () => {
+          state.use3DPlayer = !state.use3DPlayer;
+          saveSettings();
+          updatePanels();
+        }, { once: true });
+        uiTopRight.querySelector("#btnBackToMenu").addEventListener("click", () => {
+          if (state.autosave) saveGame(false);
+          backToMenu();
+        }, { once: true });
+      } else {
+        uiTopRight.style.display = "none";
+      }
+    }
+
+    function hasSave() {
+      try { return !!localStorage.getItem(SAVE_KEY); } catch { return false; }
+    }
+
+    function saveSettings() {
+      try { localStorage.setItem(SETTINGS_KEY, JSON.stringify({ autosave: !!state.autosave, use3DPlayer: !!state.use3DPlayer })); } catch {}
+      updateMenuButtons();
+    }
+
+    function loadSettings() {
+      try {
+        const raw = localStorage.getItem(SETTINGS_KEY);
+        if (!raw) return;
+        const s = JSON.parse(raw);
+        if (typeof s.autosave === "boolean") state.autosave = s.autosave;
+        if (typeof s.use3DPlayer === "boolean") state.use3DPlayer = s.use3DPlayer;
+      } catch {}
+    }
+
+    function serializeSave() {
+      const p = world.player;
+      return {
+        version: 1,
+        savedAt: Date.now(),
+        state: {
+          dnTime: state.dnTime,
+          waveTimer: state.waveTimer,
+          waveIndex: state.waveIndex,
+          threat: state.threat,
+          dayLen: state.dayLen,
+          nightLen: state.nightLen
+        },
+        player: {
+          x: p.x, y: p.y,
+          hp: p.hp, hpMax: p.hpMax,
+          stamina: p.stamina, staminaMax: p.staminaMax,
+          atk: p.atk,
+          hand: p.hand,
+          inv: p.inv
+        },
+        world: {
+          base: world.base,
+          nodes: world.nodes,
+          structures: world.structures,
+          drops: world.drops
+        }
+      };
+    }
+
+    function saveGame(manual) {
+      try {
+        localStorage.setItem(SAVE_KEY, JSON.stringify(serializeSave()));
+        updateMenuButtons();
+        if (manual) toast("已存档");
+      } catch {
+        if (manual) toast("存档失败");
+      }
+    }
+
+    function loadGame(manual) {
+      try {
+        const raw = localStorage.getItem(SAVE_KEY);
+        if (!raw) { if (manual) toast("没有存档"); return false; }
+        const data = JSON.parse(raw);
+        if (!data || data.version !== 1) { if (manual) toast("存档格式不支持"); return false; }
+
+        const basePlayer = makePlayer();
+        const savedP = data.player || {};
+        basePlayer.x = typeof savedP.x === "number" ? savedP.x : basePlayer.x;
+        basePlayer.y = typeof savedP.y === "number" ? savedP.y : basePlayer.y;
+        basePlayer.hp = typeof savedP.hp === "number" ? savedP.hp : basePlayer.hp;
+        basePlayer.hpMax = typeof savedP.hpMax === "number" ? savedP.hpMax : basePlayer.hpMax;
+        basePlayer.stamina = typeof savedP.stamina === "number" ? savedP.stamina : basePlayer.stamina;
+        basePlayer.staminaMax = typeof savedP.staminaMax === "number" ? savedP.staminaMax : basePlayer.staminaMax;
+        basePlayer.atk = typeof savedP.atk === "number" ? savedP.atk : basePlayer.atk;
+        basePlayer.hand = typeof savedP.hand === "string" ? savedP.hand : basePlayer.hand;
+        const inv = makeInventory();
+        if (savedP.inv && typeof savedP.inv === "object") {
+          for (const k in inv) if (typeof savedP.inv[k] === "number") inv[k] = savedP.inv[k];
+          for (const k in savedP.inv) if (typeof savedP.inv[k] === "number" && inv[k] === undefined) inv[k] = savedP.inv[k];
+        }
+        basePlayer.inv = inv;
+
+        const savedS = data.state || {};
+        state.dnTime = typeof savedS.dnTime === "number" ? savedS.dnTime : 0;
+        state.waveTimer = typeof savedS.waveTimer === "number" ? savedS.waveTimer : 60;
+        state.waveIndex = typeof savedS.waveIndex === "number" ? savedS.waveIndex : 0;
+        state.threat = typeof savedS.threat === "number" ? savedS.threat : 0;
+        state.dayLen = typeof savedS.dayLen === "number" ? savedS.dayLen : state.dayLen;
+        state.nightLen = typeof savedS.nightLen === "number" ? savedS.nightLen : state.nightLen;
+        state.autosaveTimer = 0;
+
+        const cycleLen = state.dayLen + state.nightLen;
+        const inCycle = ((state.dnTime % cycleLen) + cycleLen) % cycleLen;
+        state.isNight = inCycle >= state.dayLen;
+
+        const savedW = data.world || {};
+        world.base = savedW.base || { x: 0, y: 0, r: 140 };
+        world.nodes = Array.isArray(savedW.nodes) ? savedW.nodes : [];
+        world.structures = Array.isArray(savedW.structures) ? savedW.structures : [];
+        world.drops = Array.isArray(savedW.drops) ? savedW.drops : [];
+
+        world.player = basePlayer;
+        world.entities = [];
+        world.projectiles = [];
+        world.fx = [];
+
+        state.mode = "play";
+        state.buildOpen = false;
+        state.craftOpen = false;
+        state.bagOpen = false;
+        state.optionsOpen = false;
+        state.playerAnim = "Idle";
+        state.playerAnimT = 0;
+        state.playerAnimLock = 0;
+        uiTopRight.style.display = "none";
+
+        if (manual) toast("已读档");
+        updatePanels();
+        return true;
+      } catch {
+        if (manual) toast("读档失败");
+        return false;
+      }
+    }
+
+    function deleteSave() {
+      try { localStorage.removeItem(SAVE_KEY); } catch {}
+      updateMenuButtons();
+      toast("已清除存档");
+    }
+
+    function backToMenu() {
+      state.running = false;
+      overlay.style.display = "flex";
+      closePanels();
+      updateMenuButtons();
+    }
+
+    function updateMenuButtons() {
+      const ok = hasSave();
+      btnContinue.style.opacity = ok ? "1" : "0.4";
+      btnContinue.style.pointerEvents = ok ? "auto" : "none";
+      btnDeleteSave.style.opacity = ok ? "1" : "0.4";
+      btnDeleteSave.style.pointerEvents = ok ? "auto" : "none";
+    }
+
+    function screenToWorld(sx, sy) {
+      const cam = getCamera();
+      const x = (sx * DPR) - canvas.width / 2;
+      const y = (sy * DPR) - canvas.height / 2;
+      return { x: cam.x + x, y: cam.y + y };
+    }
+
+    function getCamera() {
+      const p = world.player;
+      return { x: p.x, y: p.y };
+    }
+
+    function drawChibiEyes(x, y, scale, mood = "neutral") {
+      const eyeY = y - 3 * scale;
+      const eyeX = 5.2 * scale;
+      ctx.fillStyle = "rgba(10,14,22,0.92)";
+      ctx.beginPath();
+      ctx.arc(x - eyeX, eyeY, 2.1 * scale, 0, Math.PI * 2);
+      ctx.arc(x + eyeX, eyeY, 2.1 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "rgba(235,245,255,0.9)";
+      ctx.beginPath();
+      ctx.arc(x - eyeX + 0.8 * scale, eyeY - 0.9 * scale, 0.9 * scale, 0, Math.PI * 2);
+      ctx.arc(x + eyeX + 0.8 * scale, eyeY - 0.9 * scale, 0.9 * scale, 0, Math.PI * 2);
+      ctx.fill();
+      if (mood === "angry") {
+        ctx.strokeStyle = "rgba(10,14,22,0.88)";
+        ctx.lineWidth = 2 * scale;
+        ctx.beginPath();
+        ctx.moveTo(x - eyeX - 3.8 * scale, eyeY - 4.2 * scale);
+        ctx.lineTo(x - eyeX + 2.2 * scale, eyeY - 2.9 * scale);
+        ctx.moveTo(x + eyeX + 3.8 * scale, eyeY - 4.2 * scale);
+        ctx.lineTo(x + eyeX - 2.2 * scale, eyeY - 2.9 * scale);
+        ctx.stroke();
+      }
+    }
+
+    function drawChibiPlayer(p) {
+      const r = p.r;
+      if (state.use3DPlayer) {
+        ctx.fillStyle = "rgba(10,14,22,0.55)";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y + r * 1.2, r * 0.95, 0, Math.PI * 2);
+        ctx.fill();
+        const s = r * 2.7;
+        ctx.drawImage(p3dCanvas, p.x - s, p.y - s * 1.05, s * 2, s * 2);
+        return;
+      }
+
+      const headR = r * 0.95;
+      const bodyW = r * 1.05;
+      const bodyH = r * 0.9;
+      ctx.save();
+      ctx.translate(p.x, p.y);
+
+      ctx.fillStyle = "rgba(235,245,255,0.92)";
+      ctx.beginPath();
+      ctx.ellipse(0, r * 0.72, bodyW, bodyH, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(120,170,255,0.38)";
+      ctx.beginPath();
+      ctx.ellipse(0, r * 0.8, bodyW * 0.72, bodyH * 0.65, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "rgba(235,245,255,0.97)";
+      ctx.beginPath();
+      ctx.arc(0, 0, headR, 0, Math.PI * 2);
+      ctx.fill();
+
+      drawChibiEyes(0, 0, r / 14, "neutral");
+
+      ctx.fillStyle = "rgba(255, 125, 165, 0.55)";
+      ctx.beginPath();
+      ctx.arc(-headR * 0.55, headR * 0.2, headR * 0.16, 0, Math.PI * 2);
+      ctx.arc(headR * 0.55, headR * 0.2, headR * 0.16, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (p.hand === "pick") {
+        ctx.strokeStyle = "rgba(210, 220, 235, 0.95)";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(headR * 0.85, headR * 0.85);
+        ctx.lineTo(headR * 1.55, headR * 0.15);
+        ctx.stroke();
+        ctx.strokeStyle = "rgba(120, 170, 255, 0.95)";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(headR * 1.35, -headR * 0.05);
+        ctx.lineTo(headR * 1.65, headR * 0.25);
+        ctx.stroke();
+        ctx.lineWidth = 2.6;
+        ctx.beginPath();
+        ctx.moveTo(headR * 1.28, -headR * 0.12);
+        ctx.lineTo(headR * 1.58, headR * 0.18);
+        ctx.stroke();
+      } else if (p.hand === "bandage") {
+        ctx.fillStyle = "rgba(235,245,255,0.95)";
+        ctx.beginPath();
+        ctx.roundRect(headR * 0.95, headR * 0.55, headR * 0.9, headR * 0.42, headR * 0.16);
+        ctx.fill();
+        ctx.fillStyle = "rgba(10,14,22,0.18)";
+        ctx.beginPath();
+        ctx.roundRect(headR * 1.05, headR * 0.62, headR * 0.7, headR * 0.12, headR * 0.08);
+        ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
+    function drawChibiEnemy(e) {
+      const r = e.r;
+      const headR = r * 0.95;
+      const bodyW = r * 1.0;
+      const bodyH = r * 0.78;
+      ctx.save();
+      ctx.translate(e.x, e.y);
+
+      ctx.fillStyle = e.kind === "beetle" ? "rgba(226, 192, 68, 0.85)" : "rgba(181, 140, 255, 0.72)";
+      ctx.beginPath();
+      ctx.ellipse(0, r * 0.78, bodyW, bodyH, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = e.color;
+      ctx.beginPath();
+      ctx.arc(0, 0, headR, 0, Math.PI * 2);
+      ctx.fill();
+
+      if (e.kind === "beetle") {
+        ctx.strokeStyle = "rgba(10,14,22,0.25)";
+        ctx.lineWidth = Math.max(2, r * 0.12);
+        ctx.beginPath();
+        ctx.arc(0, 0, headR * 0.88, -0.6, 0.6);
+        ctx.stroke();
+      } else {
+        ctx.fillStyle = "rgba(235,245,255,0.18)";
+        ctx.beginPath();
+        ctx.arc(-headR * 0.35, -headR * 0.25, headR * 0.24, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      drawChibiEyes(0, 0, r / 14, "angry");
+
+      ctx.fillStyle = "rgba(10,14,22,0.12)";
+      ctx.beginPath();
+      ctx.ellipse(0, r * 1.58, r * 0.72, r * 0.25, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function drawWorkbenchMarker(s) {
+      const x = s.x;
+      const y = s.y - 28;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.fillStyle = "rgba(10,14,22,0.75)";
+      ctx.beginPath();
+      ctx.arc(0, 0, 12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(233, 194, 123, 0.85)";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(0, 0, 12, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.strokeStyle = "rgba(233, 194, 123, 0.95)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-4, 4);
+      ctx.lineTo(5, -5);
+      ctx.stroke();
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.moveTo(-1, -8);
+      ctx.lineTo(6, -1);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawMinimap() {
+      const p = world.player;
+      const pad = 14 * DPR;
+      const size = 180 * DPR;
+      const x = canvas.width - pad - size;
+      const y = canvas.height - pad - size;
+      const radiusWorld = 980;
+
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+      ctx.fillStyle = "rgba(10,14,22,0.62)";
+      ctx.beginPath();
+      ctx.roundRect(x, y, size, size, 14 * DPR);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(120, 170, 255, 0.22)";
+      ctx.lineWidth = 2 * DPR;
+      ctx.stroke();
+
+      const cx = x + size / 2;
+      const cy = y + size / 2;
+      const scale = (size * 0.42) / radiusWorld;
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.roundRect(x + 8 * DPR, y + 8 * DPR, size - 16 * DPR, size - 16 * DPR, 12 * DPR);
+      ctx.clip();
+
+      ctx.strokeStyle = "rgba(120,170,255,0.10)";
+      ctx.lineWidth = 1 * DPR;
+      const grid = 200;
+      for (let gx = -radiusWorld; gx <= radiusWorld; gx += grid) {
+        const sx = cx + gx * scale;
+        ctx.beginPath();
+        ctx.moveTo(sx, y);
+        ctx.lineTo(sx, y + size);
+        ctx.stroke();
+      }
+      for (let gy = -radiusWorld; gy <= radiusWorld; gy += grid) {
+        const sy = cy + gy * scale;
+        ctx.beginPath();
+        ctx.moveTo(x, sy);
+        ctx.lineTo(x + size, sy);
+        ctx.stroke();
+      }
+
+      const base = world.base;
+      const bx = cx + (base.x - p.x) * scale;
+      const by = cy + (base.y - p.y) * scale;
+      ctx.strokeStyle = "rgba(90, 200, 255, 0.55)";
+      ctx.lineWidth = 2 * DPR;
+      ctx.beginPath();
+      ctx.arc(bx, by, base.r * scale, 0, Math.PI * 2);
+      ctx.stroke();
+
+      for (const s of world.structures) {
+        const sx = cx + (s.x - p.x) * scale;
+        const sy = cy + (s.y - p.y) * scale;
+        const d = Math.hypot(s.x - p.x, s.y - p.y);
+        if (d > radiusWorld) continue;
+        if (s.kind === "workbench") {
+          ctx.fillStyle = "rgba(233, 194, 123, 0.92)";
+          ctx.beginPath();
+          ctx.arc(sx, sy, 4.2 * DPR, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (s.kind === "turret") {
+          ctx.fillStyle = "rgba(120, 170, 255, 0.92)";
+          ctx.beginPath();
+          ctx.arc(sx, sy, 3.6 * DPR, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (s.kind === "wall") {
+          ctx.fillStyle = "rgba(210, 220, 235, 0.85)";
+          ctx.beginPath();
+          ctx.arc(sx, sy, 3.1 * DPR, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
+      for (const e of world.entities) {
+        const d = Math.hypot(e.x - p.x, e.y - p.y);
+        if (d > radiusWorld) continue;
+        const ex = cx + (e.x - p.x) * scale;
+        const ey = cy + (e.y - p.y) * scale;
+        ctx.fillStyle = "rgba(255, 110, 150, 0.92)";
+        ctx.beginPath();
+        ctx.arc(ex, ey, 3.4 * DPR, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.fillStyle = "rgba(235,245,255,0.96)";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 4.2 * DPR, 0, Math.PI * 2);
+      ctx.fill();
+      const aim = screenToWorld(mouse.x, mouse.y);
+      const [nx, ny] = norm(aim.x - p.x, aim.y - p.y);
+      ctx.strokeStyle = "rgba(235,245,255,0.55)";
+      ctx.lineWidth = 2 * DPR;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx + nx * 18 * DPR, cy + ny * 18 * DPR);
+      ctx.stroke();
+
+      ctx.restore();
+
+      ctx.fillStyle = "rgba(235,245,255,0.7)";
+      ctx.font = `${12 * DPR}px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "PingFang SC", "Microsoft YaHei", Arial`;
+      ctx.fillText(`小地图 · ${state.isNight ? "夜" : "昼"}`, x + 14 * DPR, y + 22 * DPR);
+
+      ctx.restore();
+    }
+
+    function getNightFactor() {
+      const cycleLen = state.dayLen + state.nightLen;
+      const t = ((state.dnTime % cycleLen) + cycleLen) % cycleLen;
+      const twilight = 8;
+      let v = t < state.dayLen ? 0 : 1;
+      if (t < twilight) v = t / twilight;
+      if (t > state.dayLen - twilight && t < state.dayLen) v = 1 - (state.dayLen - t) / twilight;
+      if (t > state.dayLen && t < state.dayLen + twilight) v = (t - state.dayLen) / twilight;
+      if (t > cycleLen - twilight) v = 1 - (cycleLen - t) / twilight;
+      return clamp(v, 0, 1);
+    }
+
+    function drawDayNightOverlay() {
+      const v = getNightFactor();
+      if (v <= 0.001) return;
+      const cam = getCamera();
+      ctx.save();
+      ctx.fillStyle = `rgba(6, 10, 26, ${0.12 + 0.46 * v})`;
+      ctx.fillRect(cam.x - canvas.width, cam.y - canvas.height, canvas.width * 2, canvas.height * 2);
+      ctx.globalAlpha = 0.22 * v;
+      ctx.fillStyle = "rgba(235,245,255,0.85)";
+      const step = 240;
+      const x0 = Math.floor((cam.x - canvas.width) / step) * step;
+      const y0 = Math.floor((cam.y - canvas.height) / step) * step;
+      const x1 = cam.x + canvas.width;
+      const y1 = cam.y + canvas.height;
+      for (let x = x0; x <= x1; x += step) {
+        for (let y = y0; y <= y1; y += step) {
+          const n = (Math.sin(x * 0.012 + state.dnTime * 0.18) + Math.cos(y * 0.011 + state.dnTime * 0.15)) * 0.5;
+          const r = 1.2 + Math.abs(n) * 1.9;
+          ctx.beginPath();
+          ctx.arc(x + step * 0.5, y + step * 0.5, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
+
+    function draw() {
+      const cam = getCamera();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = "#070A0F";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.translate(-cam.x, -cam.y);
+
+      drawBackground(cam);
+      drawBase();
+      drawNodes();
+      drawDrops();
+      drawStructures();
+      drawEntities();
+      drawProjectiles();
+      drawFX();
+      drawBuildGhost();
+      drawDayNightOverlay();
+
+      drawMinimap();
+    }
+
+    function drawBackground(cam) {
+      const size = 70;
+      const x0 = Math.floor((cam.x - canvas.width / 2 - 400) / size) * size;
+      const y0 = Math.floor((cam.y - canvas.height / 2 - 400) / size) * size;
+      const x1 = cam.x + canvas.width / 2 + 400;
+      const y1 = cam.y + canvas.height / 2 + 400;
+      for (let x = x0; x <= x1; x += size) {
+        for (let y = y0; y <= y1; y += size) {
+          const n = (Math.sin(x * 0.0123) + Math.cos(y * 0.0117)) * 0.5;
+          const r = 12 + (n * 6);
+          ctx.fillStyle = `rgba(90, 130, 220, ${0.04 + Math.abs(n) * 0.03})`;
+          ctx.beginPath();
+          ctx.arc(x + size / 2, y + size / 2, r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+
+    function drawBase() {
+      const b = world.base;
+      const g = ctx.createRadialGradient(b.x, b.y, b.r * 0.2, b.x, b.y, b.r * 1.6);
+      g.addColorStop(0, "rgba(90, 180, 255, 0.20)");
+      g.addColorStop(1, "rgba(90, 180, 255, 0.02)");
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = "rgba(90, 180, 255, 0.35)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, b.r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    function drawNodes() {
+      for (const n of world.nodes) {
+        ctx.fillStyle = n.color;
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+        ctx.fill();
+        const hp = n.hp / n.hpMax;
+        if (hp < 1) {
+          ctx.fillStyle = "rgba(10,14,22,0.7)";
+          ctx.fillRect(n.x - 18, n.y - n.r - 18, 36, 6);
+          ctx.fillStyle = "rgba(235,245,255,0.9)";
+          ctx.fillRect(n.x - 18, n.y - n.r - 18, 36 * hp, 6);
+        }
+      }
+    }
+
+    function drawDrops() {
+      for (const d of world.drops) {
+        const c = items[d.kind]?.color || "#FFFFFF";
+        ctx.fillStyle = "rgba(10,14,22,0.55)";
+        ctx.beginPath();
+        ctx.arc(d.x, d.y + 10, d.r * 0.9, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = c;
+        ctx.beginPath();
+        ctx.roundRect(d.x - d.r, d.y - d.r, d.r * 2, d.r * 2, 5);
+        ctx.fill();
+        ctx.fillStyle = "rgba(235,245,255,0.92)";
+        ctx.font = `12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "PingFang SC", "Microsoft YaHei", Arial`;
+        if ((d.count || 1) > 1) ctx.fillText(String(d.count), d.x + d.r + 2, d.y - d.r + 12);
+      }
+    }
+
+    function drawEntities() {
+      for (const e of world.entities) {
+        drawChibiEnemy(e);
+        const hp = e.hp / e.hpMax;
+        ctx.fillStyle = "rgba(10,14,22,0.75)";
+        ctx.fillRect(e.x - 18, e.y - e.r - 16, 36, 6);
+        ctx.fillStyle = "rgba(255, 110, 150, 0.95)";
+        ctx.fillRect(e.x - 18, e.y - e.r - 16, 36 * hp, 6);
+      }
+
+      const p = world.player;
+      const aim = screenToWorld(mouse.x, mouse.y);
+      const [nx, ny] = norm(aim.x - p.x, aim.y - p.y);
+      if (state.use3DPlayer) astronaut3D.render(state.playerAnim, state.playerAnimT, Math.atan2(ny, nx));
+      drawChibiPlayer(p);
+      ctx.strokeStyle = "rgba(235,245,255,0.35)";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(p.x + nx * 8, p.y + ny * 8);
+      ctx.lineTo(p.x + nx * 22, p.y + ny * 22);
+      ctx.stroke();
+    }
+
+    function drawStructures() {
+      for (const s of world.structures) {
+        if (s.kind === "camp") {
+          ctx.fillStyle = "rgba(90, 200, 255, 0.9)";
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          ctx.fill();
+          continue;
+        }
+        if (s.kind === "workbench") {
+          ctx.fillStyle = "rgba(233, 194, 123, 0.95)";
+          ctx.beginPath();
+          ctx.roundRect(s.x - 16, s.y - 16, 32, 32, 8);
+          ctx.fill();
+          drawWorkbenchMarker(s);
+        } else if (s.kind === "turret") {
+          ctx.fillStyle = "rgba(120, 170, 255, 0.95)";
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = "rgba(120,170,255,0.18)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.range, 0, Math.PI * 2);
+          ctx.stroke();
+        } else if (s.kind === "wall") {
+          ctx.fillStyle = "rgba(210, 220, 235, 0.92)";
+          ctx.beginPath();
+          ctx.roundRect(s.x - 12, s.y - 12, 24, 24, 6);
+          ctx.fill();
+        }
+        const hp = s.hp / s.hpMax;
+        if (hp < 1) {
+          ctx.fillStyle = "rgba(10,14,22,0.75)";
+          ctx.fillRect(s.x - 18, s.y - s.r - 18, 36, 6);
+          ctx.fillStyle = "rgba(120, 255, 190, 0.92)";
+          ctx.fillRect(s.x - 18, s.y - s.r - 18, 36 * hp, 6);
+        }
+      }
+    }
+
+    function drawProjectiles() {
+      for (const p of world.projectiles) {
+        ctx.fillStyle = "rgba(235,245,255,0.92)";
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawFX() {
+      for (const f of world.fx) {
+        const t = f.t;
+        if (f.kind === "hit") {
+          const a = 1 - t / 0.45;
+          ctx.strokeStyle = (f.color || "rgba(235,245,255,0.8)").replace(")", `,${a})`).replace("rgb(", "rgba(");
+          ctx.lineWidth = 3;
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, 8 + t * 26, 0, Math.PI * 2);
+          ctx.stroke();
+        } else if (f.kind === "slash") {
+          const a = 1 - t / 0.45;
+          ctx.strokeStyle = `rgba(235,245,255,${0.55 * a})`;
+          ctx.lineWidth = 4;
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, 16 + t * 18, 0.4, 2.7);
+          ctx.stroke();
+        } else if (f.kind === "shot") {
+          const a = 1 - t / 0.45;
+          ctx.fillStyle = `rgba(120,170,255,${0.55 * a})`;
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, 6 + t * 18, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (f.kind === "roll") {
+          const a = 1 - t / 0.45;
+          ctx.strokeStyle = `rgba(235,245,255,${0.22 * a})`;
+          ctx.lineWidth = 6;
+          ctx.beginPath();
+          ctx.arc(f.x, f.y, 24 + t * 46, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+      }
+    }
+
+    function drawBuildGhost() {
+      if (state.mode !== "build") return;
+      const w = screenToWorld(mouse.x, mouse.y);
+      const k = state.buildKind;
+      const p = world.player;
+      const r = k === "wall" ? 12 : (k === "turret" ? 16 : 12);
+      const have = (p.inv[k] || 0) > 0;
+      const ok = (k === "workbench" || k === "turret" || k === "wall")
+        ? (have && canPlaceAt(w.x, w.y, r))
+        : (have && Math.hypot(w.x - p.x, w.y - p.y) <= 240);
+      ctx.globalAlpha = 0.85;
+      ctx.strokeStyle = ok ? "rgba(120,255,190,0.9)" : "rgba(255,120,160,0.9)";
+      ctx.lineWidth = 3;
+      if (k === "workbench") {
+        ctx.beginPath();
+        ctx.roundRect(w.x - 16, w.y - 16, 32, 32, 8);
+        ctx.stroke();
+      } else if (k === "turret") {
+        ctx.beginPath();
+        ctx.arc(w.x, w.y, r, 0, Math.PI * 2);
+        ctx.stroke();
+      } else if (k === "wall") {
+        ctx.beginPath();
+        ctx.roundRect(w.x - 12, w.y - 12, 24, 24, 6);
+        ctx.stroke();
+      } else {
+        ctx.beginPath();
+        ctx.roundRect(w.x - 10, w.y - 10, 20, 20, 5);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+    }
+
+    function tick(dt) {
+      if (!state.running) return;
+      state.t += dt;
+      if (state.autosave) {
+        state.autosaveTimer += dt;
+        if (state.autosaveTimer >= 12) {
+          state.autosaveTimer = 0;
+          saveGame(false);
+        }
+      }
+      state.dnTime += dt;
+      const cycleLen = state.dayLen + state.nightLen;
+      const inCycle = ((state.dnTime % cycleLen) + cycleLen) % cycleLen;
+      const wantNight = inCycle >= state.dayLen;
+      if (wantNight !== state.isNight) {
+        state.isNight = wantNight;
+        if (state.isNight) {
+          state.waveTimer = 16;
+          state.waveIndex = 0;
+          for (let i = 0; i < 7; i++) spawnEnemyFar(true);
+          toast("夜幕降临：怪物出现了", 1800);
+        } else {
+          world.entities = [];
+          world.projectiles = [];
+          state.waveTimer = 60;
+          state.waveIndex = 0;
+          state.threat = Math.max(0, state.threat - 2.5);
+          toast("天亮了：怪物退去", 1600);
+        }
+        if (state.autosave) saveGame(false);
+        updatePanels();
+        closePanels();
+      }
+      updatePlayer(dt);
+      pickupDrops();
+
+      if (state.playerAnimLock > 0) {
+        state.playerAnimLock = Math.max(0, state.playerAnimLock - dt);
+        state.playerAnimT += dt;
+      } else if (state.playerAnim !== "Death") {
+        const want = world.player.moving ? "Walk" : "Idle";
+        if (want !== state.playerAnim) {
+          state.playerAnim = want;
+          state.playerAnimT = 0;
+        } else {
+          state.playerAnimT += dt;
+        }
+      } else {
+        state.playerAnimT += dt;
+      }
+
+      for (const s of world.structures) updateStructure(dt, s);
+      if (state.isNight) {
+        for (const e of world.entities) updateEnemy(dt, e);
+      }
+      updateProjectiles(dt);
+      updateFX(dt);
+      if (state.isNight) {
+        state.waveTimer -= dt;
+        if (state.waveTimer <= 0) {
+          spawnWave();
+          state.waveTimer = Math.max(28, 60 - state.waveIndex * 2);
+        }
+        state.threat = clamp(state.threat + 0.02 * dt * world.entities.length, 0, 20);
+      } else {
+        state.threat = clamp(state.threat - 0.35 * dt, 0, 20);
+      }
+      if (Math.random() < 0.005 && world.nodes.length < 170) respawnNode();
+      if (state.isNight && Math.random() < 0.003 && world.entities.length < 14) spawnEnemyFar();
+      if (now() > state.toastUntil && uiToast.style.display !== "none") uiToast.style.display = "none";
+      if ((keys.has("q") || keys.has("h")) && (world.player.inv.bandage || 0) > 0) useBandage();
+      if ((keys.has("c")) && world.player.nearWorkbench) toggleCraftIfNear();
+      draw();
+      if ((Math.random() < 0.05) || state.mode !== "play") updatePanels();
+    }
+
+    function respawnNode() {
+      const t = pick(nodeTypes);
+      const p = world.player;
+      const ang = rand(0, Math.PI * 2);
+      const rr = rand(240, 1500);
+      world.nodes.push({
+        id: cryptoId(),
+        type: t.kind,
+        name: t.name,
+        x: p.x + Math.cos(ang) * rr,
+        y: p.y + Math.sin(ang) * rr,
+        r: rand(16, 22),
+        hp: t.hp,
+        hpMax: t.hp,
+        color: t.color
+      });
+    }
+
+    let last = now();
+    function loop() {
+      const t = now();
+      const dt = clamp((t - last) / 1000, 0, 0.033);
+      last = t;
+      tick(dt);
+      requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+
+    function startNew() {
+      resetWorld();
+      overlay.style.display = "none";
+      state.running = true;
+      updatePanels();
+      toast("出发：先搜集废金属与矿石，组装工作台与哨戒炮");
+      if (state.autosave) saveGame(false);
+    }
+
+    function startContinue() {
+      const ok = loadGame(false);
+      if (!ok) resetWorld();
+      overlay.style.display = "none";
+      state.running = true;
+      updatePanels();
+      toast("已继续游戏");
+    }
+
+    btnContinue.addEventListener("click", () => {
+      if (!state.running) startContinue();
+    });
+    btnNew.addEventListener("click", () => {
+      startNew();
+    });
+    btnDeleteSave.addEventListener("click", () => {
+      deleteSave();
+      updateMenuButtons();
+    });
+
+    resetWorld();
+    loadSettings();
+    updateMenuButtons();
+    updatePanels();
+  </script>
+</body>
+</html>
